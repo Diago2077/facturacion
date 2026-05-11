@@ -665,6 +665,57 @@
     animation: pulse 1s infinite;
   }
 
+  /* ─── RESUMEN MES ─── */
+  .resumen-mes {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  .resumen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 18px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .resumen-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+  .resumen-valor {
+    font-family: var(--mono);
+    font-size: 22px;
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .resumen-valor.accent { color: var(--accent); }
+  .resumen-valor.green { color: #4ade80; }
+  .resumen-sub {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+
+  /* columna margen en tabla productos */
+  .productos-table .td-margen {
+    font-family: var(--mono);
+    font-size: 12px;
+    text-align: right;
+    width: 100px;
+    white-space: nowrap;
+  }
+  .margen-pos { color: #4ade80; }
+  .margen-neg { color: var(--danger); }
+  .margen-na  { color: var(--text3); }
+
   /* ─── SUGERENCIAS DROPDOWN ─── */
   .sugerencias {
     display: none;
@@ -829,7 +880,9 @@
             <th>#</th>
             <th>Código de barra</th>
             <th>Nombre del producto</th>
-            <th class="td-right">Precio</th>
+            <th class="td-right">Costo</th>
+            <th class="td-right">Venta</th>
+            <th class="td-right">Margen</th>
             <th class="td-right">Acciones</th>
           </tr>
         </thead>
@@ -846,6 +899,30 @@
       <div class="section-title">Historial de ventas</div>
       <button class="btn btn-ghost btn-sm" onclick="cargarHistorial()">↻ ACTUALIZAR</button>
     </div>
+
+    <!-- Resumen del mes -->
+    <div class="resumen-mes" id="resumen-mes">
+      <div class="resumen-card">
+        <div class="resumen-label">Ventas del mes</div>
+        <div class="resumen-valor" id="res-cantidad">—</div>
+        <div class="resumen-sub" id="res-mes">cargando…</div>
+      </div>
+      <div class="resumen-card">
+        <div class="resumen-label">Total facturado</div>
+        <div class="resumen-valor accent" id="res-total">—</div>
+        <div class="resumen-sub">ingresos brutos</div>
+      </div>
+      <div class="resumen-card">
+        <div class="resumen-label">Ganancia estimada</div>
+        <div class="resumen-valor green" id="res-ganancia">—</div>
+        <div class="resumen-sub">venta − costo</div>
+      </div>
+      <div class="resumen-card">
+        <div class="resumen-label">Margen promedio</div>
+        <div class="resumen-valor" id="res-margen">—</div>
+        <div class="resumen-sub">sobre el total</div>
+      </div>
+    </div>
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden">
       <table class="historial-table">
         <thead>
@@ -854,6 +931,7 @@
             <th>Fecha / Hora</th>
             <th>Productos</th>
             <th class="td-right">Total</th>
+            <th class="td-right">Ganancia</th>
             <th>Estado</th>
           </tr>
         </thead>
@@ -909,10 +987,17 @@
         <label>Nombre del producto</label>
         <input type="text" id="prod-nombre" placeholder="Ej: Coca Cola 600ml">
       </div>
-      <div class="field-group">
-        <label>Precio de venta (₲)</label>
-        <input type="number" id="prod-precio" placeholder="Ej: 5000" min="0">
+      <div style="display:flex;gap:12px">
+        <div class="field-group" style="flex:1">
+          <label>Precio de costo (₲)</label>
+          <input type="number" id="prod-costo" placeholder="Ej: 3000" min="0">
+        </div>
+        <div class="field-group" style="flex:1">
+          <label>Precio de venta (₲)</label>
+          <input type="number" id="prod-precio" placeholder="Ej: 5000" min="0">
+        </div>
       </div>
+      <div id="margen-preview" style="display:none;font-family:var(--mono);font-size:11px;color:var(--text2);padding:6px 10px;background:var(--bg);border-radius:4px;border:1px solid var(--border)"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-ghost" onclick="cerrarModal()">CANCELAR</button>
@@ -980,7 +1065,7 @@ function getProductos() {
   const productos = [];
   for (let i = 1; i < rows.length; i++) {
     if (rows[i][0]) {
-      productos.push({ codigo: rows[i][0], nombre: rows[i][1], precio: rows[i][2] });
+      productos.push({ codigo: rows[i][0], nombre: rows[i][1], precio: rows[i][2], costo: rows[i][3] || 0 });
     }
   }
   return { ok: true, data: productos };
@@ -989,15 +1074,13 @@ function getProductos() {
 function saveProducto(prod) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('productos');
   const rows = sheet.getDataRange().getValues();
-  // Buscar si ya existe
   for (let i = 1; i < rows.length; i++) {
     if (String(rows[i][0]) === String(prod.codigo)) {
-      sheet.getRange(i + 1, 1, 1, 3).setValues([[prod.codigo, prod.nombre, prod.precio]]);
+      sheet.getRange(i + 1, 1, 1, 4).setValues([[prod.codigo, prod.nombre, prod.precio, prod.costo || 0]]);
       return { ok: true, action: 'updated' };
     }
   }
-  // Nuevo
-  sheet.appendRow([prod.codigo, prod.nombre, prod.precio]);
+  sheet.appendRow([prod.codigo, prod.nombre, prod.precio, prod.costo || 0]);
   return { ok: true, action: 'created' };
 }
 
@@ -1017,8 +1100,9 @@ function saveVenta(venta) {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('ventas');
   const id = new Date().getTime();
   const fecha = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'dd/MM/yyyy HH:mm:ss');
-  const itemsStr = venta.items.map(i => i.cantidad + 'x ' + i.nombre).join(' | ');
-  sheet.appendRow([id, fecha, itemsStr, venta.total]);
+  const itemsStr = venta.items.map(function(i) { return i.cantidad + 'x ' + i.nombre; }).join(' | ');
+  const ganancia = venta.ganancia || 0;
+  sheet.appendRow([id, fecha, itemsStr, venta.total, ganancia]);
   return { ok: true, id: id };
 }
 
@@ -1026,12 +1110,12 @@ function getVentas() {
   const sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName('ventas');
   const rows = sheet.getDataRange().getValues();
   const ventas = [];
-  for (let i = rows.length - 1; i >= 1; i--) {
+  for (var i = rows.length - 1; i >= 1; i--) {
     if (rows[i][0]) {
-      ventas.push({ id: rows[i][0], fecha: rows[i][1], items: rows[i][2], total: rows[i][3] });
+      ventas.push({ id: rows[i][0], fecha: rows[i][1], items: rows[i][2], total: rows[i][3], ganancia: rows[i][4] || 0 });
     }
   }
-  return { ok: true, data: ventas.slice(0, 50) };
+  return { ok: true, data: ventas.slice(0, 200) };
 }`;
 
 // ─── STATE ────────────────────────────────────────────
@@ -1310,24 +1394,34 @@ function renderProductos() {
     : productos;
 
   if (lista.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">
       ${filtro ? 'Sin resultados para "' + filtro + '"' : 'Sin productos registrados aún'}
     </td></tr>`;
     return;
   }
 
-  tbody.innerHTML = lista.map((p, i) => `
+  tbody.innerHTML = lista.map((p, i) => {
+    let margenHtml = '<span class="margen-na">—</span>';
+    if (p.costo > 0 && p.precio > 0) {
+      const gan = p.precio - p.costo;
+      const pct = ((gan / p.costo) * 100).toFixed(1);
+      const cls = gan >= 0 ? 'margen-pos' : 'margen-neg';
+      margenHtml = `<span class="${cls}">${pct}%</span>`;
+    }
+    return `
     <tr>
       <td class="td-num">${i + 1}</td>
       <td class="td-codigo">${p.codigo}</td>
       <td class="td-nombre">${p.nombre}</td>
+      <td class="td-margen" style="text-align:right;color:var(--text2)">${p.costo > 0 ? formatGs(p.costo) : '<span style="color:var(--text3)">—</span>'}</td>
       <td class="td-precio">${formatGs(p.precio)}</td>
+      <td class="td-margen">${margenHtml}</td>
       <td class="td-acciones">
         <button class="btn btn-ghost btn-sm" onclick="abrirModalProducto('${p.codigo}')">Editar</button>
         <button class="btn btn-danger btn-sm" onclick="eliminarProducto('${p.codigo}')">Eliminar</button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  }).join('');
 }
 
 function filtrarProductos() { renderProductos(); }
@@ -1338,6 +1432,8 @@ function abrirModalProducto(codigoInicial = '') {
   document.getElementById('prod-codigo').value = typeof codigoInicial === 'string' ? codigoInicial : '';
   document.getElementById('prod-nombre').value = '';
   document.getElementById('prod-precio').value = '';
+  document.getElementById('prod-costo').value = '';
+  document.getElementById('margen-preview').style.display = 'none';
   document.getElementById('prod-codigo').readOnly = false;
 
   if (codigoInicial && typeof codigoInicial === 'string' && codigoInicial.length > 0) {
@@ -1348,15 +1444,36 @@ function abrirModalProducto(codigoInicial = '') {
       document.getElementById('prod-codigo').value = prod.codigo;
       document.getElementById('prod-nombre').value = prod.nombre;
       document.getElementById('prod-precio').value = prod.precio;
+      document.getElementById('prod-costo').value = prod.costo || '';
       document.getElementById('prod-codigo').readOnly = true;
+      actualizarMargenPreview();
     }
   }
+
+  // Preview de margen al escribir
+  document.getElementById('prod-costo').oninput = actualizarMargenPreview;
+  document.getElementById('prod-precio').oninput = actualizarMargenPreview;
 
   document.getElementById('modal-producto').classList.add('show');
   setTimeout(() => {
     const f = editingCodigo ? document.getElementById('prod-nombre') : document.getElementById('prod-codigo');
     f.focus();
   }, 50);
+}
+
+function actualizarMargenPreview() {
+  const costo = parseFloat(document.getElementById('prod-costo').value);
+  const precio = parseFloat(document.getElementById('prod-precio').value);
+  const el = document.getElementById('margen-preview');
+  if (!isNaN(costo) && !isNaN(precio) && costo > 0 && precio > 0) {
+    const ganancia = precio - costo;
+    const pct = ((ganancia / costo) * 100).toFixed(1);
+    const color = ganancia >= 0 ? '#4ade80' : 'var(--danger)';
+    el.style.display = 'block';
+    el.innerHTML = `Ganancia por unidad: <span style="color:${color};font-weight:600">${formatGs(ganancia)}</span> &nbsp;|&nbsp; Margen: <span style="color:${color};font-weight:600">${pct}%</span>`;
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function cerrarModal() {
@@ -1367,12 +1484,13 @@ async function guardarProducto() {
   const codigo = document.getElementById('prod-codigo').value.trim();
   const nombre = document.getElementById('prod-nombre').value.trim();
   const precio = parseFloat(document.getElementById('prod-precio').value);
+  const costo = parseFloat(document.getElementById('prod-costo').value) || 0;
 
   if (!codigo || !nombre || isNaN(precio) || precio < 0) {
-    toast('Completá todos los campos', 'error'); return;
+    toast('Completá código, nombre y precio de venta', 'error'); return;
   }
 
-  const prod = { codigo, nombre, precio };
+  const prod = { codigo, nombre, precio, costo };
   const idx = productos.findIndex(p => String(p.codigo) === String(codigo));
   if (idx >= 0) productos[idx] = prod;
   else productos.push(prod);
@@ -1472,13 +1590,19 @@ async function confirmarVenta() {
   if (itemsVenta.length === 0) { toast('Agregá al menos un item', 'error'); return; }
 
   const total = itemsVenta.reduce((s, i) => s + i.precio * i.cantidad, 0);
-  const venta = { items: [...itemsVenta], total };
+  // Calcular ganancia: (precio_venta - precio_costo) * cantidad por cada item
+  const ganancia = itemsVenta.reduce((s, i) => {
+    const prod = buscarProducto(i.codigo);
+    const costo = (prod && prod.costo > 0) ? prod.costo : i.precio; // si no hay costo, ganancia = 0
+    return s + (i.precio - costo) * i.cantidad;
+  }, 0);
+
+  const venta = { items: [...itemsVenta], total, ganancia };
 
   if (!CONFIG.url) {
     toast('Configurá el Google Sheets primero', 'error'); return;
   }
 
-  // Intentar guardar online
   try {
     toast('Guardando venta…', '');
     const r = await apiCall('saveVenta', venta);
@@ -1488,7 +1612,6 @@ async function confirmarVenta() {
       throw new Error('Error del servidor');
     }
   } catch {
-    // Sin internet → guardar en cola
     guardarPendiente(venta);
     toast('Sin internet — venta guardada localmente ⚡', 'error');
   }
@@ -1501,30 +1624,59 @@ async function confirmarVenta() {
 // ─── HISTORIAL ────────────────────────────────────────
 async function cargarHistorial() {
   const tbody = document.getElementById('historial-tbody');
-  tbody.innerHTML = `<tr class="loading-row"><td colspan="5">Cargando…</td></tr>`;
+  tbody.innerHTML = `<tr class="loading-row"><td colspan="6">Cargando…</td></tr>`;
 
   if (!CONFIG.url) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Configurá el Google Sheets primero</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Configurá el Google Sheets primero</td></tr>`;
     return;
   }
 
   try {
     const r = await apiCall('getVentas');
-    if (r.ok && r.data.length > 0) {
-      tbody.innerHTML = r.data.map((v, i) => `
-        <tr>
-          <td>#${r.data.length - i}</td>
-          <td>${v.fecha}</td>
-          <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.items}</td>
-          <td class="td-right td-total">₲ ${formatNum(v.total)}</td>
-          <td><span class="badge">OK</span></td>
-        </tr>
-      `).join('');
-    } else {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Sin ventas registradas</td></tr>`;
+    if (r.ok) {
+      // Filtrar ventas del mes actual
+      const ahora = new Date();
+      const mesActual = ahora.getMonth();
+      const anioActual = ahora.getFullYear();
+      const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+      const ventasMes = r.data.filter(v => {
+        if (!v.fecha) return false;
+        // fecha formato dd/MM/yyyy HH:mm:ss
+        const parts = v.fecha.split('/');
+        if (parts.length < 3) return false;
+        const mes = parseInt(parts[1]) - 1;
+        const anio = parseInt(parts[2]);
+        return mes === mesActual && anio === anioActual;
+      });
+
+      const totalMes = ventasMes.reduce((s, v) => s + Number(v.total || 0), 0);
+      const gananciaMes = ventasMes.reduce((s, v) => s + Number(v.ganancia || 0), 0);
+      const margenPct = totalMes > 0 ? ((gananciaMes / totalMes) * 100).toFixed(1) + '%' : '—';
+
+      document.getElementById('res-cantidad').textContent = ventasMes.length;
+      document.getElementById('res-total').textContent = formatGs(totalMes);
+      document.getElementById('res-ganancia').textContent = formatGs(gananciaMes);
+      document.getElementById('res-margen').textContent = margenPct;
+      document.getElementById('res-mes').textContent = MESES[mesActual] + ' ' + anioActual;
+
+      if (r.data.length > 0) {
+        tbody.innerHTML = r.data.map((v, i) => `
+          <tr>
+            <td>#${r.data.length - i}</td>
+            <td>${v.fecha}</td>
+            <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.items}</td>
+            <td class="td-right td-total">₲ ${formatNum(v.total)}</td>
+            <td class="td-right" style="color:#4ade80;font-family:var(--mono);font-size:12px">${Number(v.ganancia) > 0 ? '₲ ' + formatNum(v.ganancia) : '<span style="color:var(--text3)">—</span>'}</td>
+            <td><span class="badge">OK</span></td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Sin ventas registradas</td></tr>`;
+      }
     }
   } catch {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--danger);font-family:var(--mono);font-size:12px">Error al conectar</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--danger);font-family:var(--mono);font-size:12px">Error al conectar</td></tr>`;
   }
 }
 
