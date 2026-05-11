@@ -860,9 +860,9 @@
           <input class="input-code" id="input-codigo" type="text" placeholder="Escanear código o escribir nombre…" autocomplete="off" autofocus>
           <div id="sugerencias" class="sugerencias"></div>
         </div>
-        <div class="field-group" style="width:80px; flex:none">
+        <div class="field-group" style="width:90px; flex:none">
           <label>Cantidad</label>
-          <input class="qty-input" id="input-qty" type="number" value="1" min="1">
+          <input class="qty-input" id="input-qty" type="number" value="1" min="0.001" step="0.001">
         </div>
         <button class="btn btn-primary btn-big" onclick="agregarItem()">+ AGREGAR</button>
       </div>
@@ -1613,7 +1613,7 @@ async function eliminarProducto(codigo) {
 function agregarItem() {
   cerrarSugerencias();
   const codigoInput = document.getElementById('input-codigo').value.trim();
-  const qty = parseInt(document.getElementById('input-qty').value) || 1;
+  const qty = parseFloat(document.getElementById('input-qty').value) || 1;
 
   if (!codigoInput) { document.getElementById('input-codigo').focus(); return; }
 
@@ -1656,7 +1656,7 @@ function renderItems() {
       <td class="td-mono">${item.codigo}</td>
       <td>${item.nombre}</td>
       <td class="td-mono td-right">${formatGs(item.precio)}</td>
-      <td class="td-mono td-right">${item.cantidad}</td>
+      <td class="td-mono td-right">${formatCant(item.cantidad)}</td>
       <td class="td-mono td-right" style="color:var(--accent)">${formatGs(item.precio * item.cantidad)}</td>
       <td><button class="remove-btn" onclick="quitarItem(${i})">✕</button></td>
     </tr>
@@ -1879,6 +1879,10 @@ function copiarAppsScript() {
 // ─── UTILS ────────────────────────────────────────────
 function formatGs(n) { return '₲ ' + formatNum(n); }
 function formatNum(n) { return Math.round(Number(n)).toLocaleString('es-PY'); }
+function formatCant(n) {
+  // Muestra hasta 3 decimales, eliminando ceros finales: 1 → "1", 0.5 → "0.5", 0.250 → "0.25"
+  return parseFloat(Number(n).toFixed(3)).toString();
+}
 
 function toast(msg, type = '') {
   const container = document.getElementById('toast-container');
