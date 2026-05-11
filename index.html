@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Facturación — La Costa</title>
+<title>Facturación — Mini Market San Alfredo</title>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -651,6 +651,56 @@
     font-size: 12px;
     animation: pulse 1s infinite;
   }
+
+  /* ─── SUGERENCIAS DROPDOWN ─── */
+  .sugerencias {
+    display: none;
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0; right: 0;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 6px;
+    z-index: 50;
+    max-height: 220px;
+    overflow-y: auto;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .sugerencias.show { display: block; }
+  .sug-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+    gap: 12px;
+  }
+  .sug-item:last-child { border-bottom: none; }
+  .sug-item:hover, .sug-item.selected { background: var(--accent-dim); }
+  .sug-item .sug-nombre { font-size: 14px; font-weight: 500; flex: 1; }
+  .sug-item .sug-codigo { font-family: var(--mono); font-size: 11px; color: var(--text3); }
+  .sug-item .sug-precio { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 600; white-space: nowrap; }
+  .sug-highlight { color: var(--accent); }
+
+  /* ─── BADGE OFFLINE ─── */
+  .offline-badge {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    background: rgba(245,166,35,0.12);
+    border: 1px solid rgba(245,166,35,0.3);
+    border-radius: 5px;
+    padding: 8px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--warn);
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .offline-badge.show { display: flex; }
+  .offline-badge:hover { background: rgba(245,166,35,0.2); }
 </style>
 </head>
 <body>
@@ -659,7 +709,7 @@
 
   <!-- HEADER -->
   <header>
-    <div class="logo">LA COSTA <span>/ FACTURACIÓN</span></div>
+    <div class="logo">MINI MARKET <span>SAN ALFREDO</span></div>
     <nav>
       <button class="nav-btn active" onclick="goTo('ventas')">VENTAS</button>
       <button class="nav-btn" onclick="goTo('productos')">PRODUCTOS</button>
@@ -667,6 +717,10 @@
       <button class="nav-btn" onclick="goTo('setup')">CONFIG</button>
     </nav>
     <div class="status-indicator">
+      <div id="offline-badge" class="offline-badge" onclick="sincronizarPendientes()" title="Click para sincronizar ahora">
+        <span>⚡</span>
+        <span id="offline-count">0 pendientes</span>
+      </div>
       <div class="dot" id="status-dot"></div>
       <span id="status-text">sin conexión</span>
     </div>
@@ -678,9 +732,10 @@
     <!-- Scan -->
     <div class="scan-area">
       <div class="scan-row">
-        <div class="field-group" style="max-width:340px">
-          <label>Código de barra</label>
-          <input class="input-code" id="input-codigo" type="text" placeholder="Escanear o tipear código…" autocomplete="off" autofocus>
+        <div class="field-group" style="max-width:420px; position:relative;">
+          <label>Código de barra o nombre del producto</label>
+          <input class="input-code" id="input-codigo" type="text" placeholder="Escanear código o escribir nombre…" autocomplete="off" autofocus>
+          <div id="sugerencias" class="sugerencias"></div>
         </div>
         <div class="field-group" style="width:80px; flex:none">
           <label>Cantidad</label>
@@ -961,6 +1016,9 @@ let productos = JSON.parse(localStorage.getItem('facturacion_productos') || '[]'
 let itemsVenta = [];
 let editingCodigo = null;
 let currentPage = 'ventas';
+let ventasPendientes = JSON.parse(localStorage.getItem('facturacion_pendientes') || '[]');
+let sugIndex = -1; // índice seleccionado en sugerencias
+let prodSeleccionado = null; // producto seleccionado desde sugerencia
 
 // ─── INIT ─────────────────────────────────────────────
 window.addEventListener('load', () => {
@@ -973,14 +1031,136 @@ window.addEventListener('load', () => {
     goTo('setup');
   }
 
-  // Enter en código → agregar
-  document.getElementById('input-codigo').addEventListener('keydown', e => {
-    if (e.key === 'Enter') agregarItem();
+  const inputCodigo = document.getElementById('input-codigo');
+
+  // Enter → agregar item
+  inputCodigo.addEventListener('keydown', e => {
+    const sug = document.getElementById('sugerencias');
+    const items = sug.querySelectorAll('.sug-item');
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      sugIndex = Math.min(sugIndex + 1, items.length - 1);
+      actualizarSugSelected(items);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      sugIndex = Math.max(sugIndex - 1, -1);
+      actualizarSugSelected(items);
+    } else if (e.key === 'Enter') {
+      if (sugIndex >= 0 && items[sugIndex]) {
+        items[sugIndex].click();
+      } else {
+        agregarItem();
+      }
+    } else if (e.key === 'Escape') {
+      cerrarSugerencias();
+    }
   });
 
-  // Autocompletar al tipear código
-  document.getElementById('input-codigo').addEventListener('input', debounce(buscarProductoPrev, 300));
+  // Buscar mientras escribe
+  inputCodigo.addEventListener('input', debounce(onInputCodigo, 150));
+
+  // Cerrar sugerencias al click fuera
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.field-group')) cerrarSugerencias();
+  });
+
+  actualizarBadgeOffline();
+
+  // Intentar sincronizar al recuperar conexión
+  window.addEventListener('online', () => {
+    setStatus('conectado', 'ok');
+    sincronizarPendientes();
+  });
+  window.addEventListener('offline', () => setStatus('sin internet', 'err'));
 });
+
+// ─── BÚSQUEDA CON SUGERENCIAS ─────────────────────────
+function onInputCodigo() {
+  const q = document.getElementById('input-codigo').value.trim();
+  const preview = document.getElementById('product-preview');
+  const notFound = document.getElementById('not-found');
+  preview.classList.remove('show');
+  notFound.classList.remove('show');
+  prodSeleccionado = null;
+  sugIndex = -1;
+
+  if (!q) { cerrarSugerencias(); return; }
+
+  // Primero intentar coincidencia exacta de código (scanner)
+  const exacto = productos.find(p => String(p.codigo) === String(q));
+  if (exacto) {
+    cerrarSugerencias();
+    mostrarPreview(exacto);
+    prodSeleccionado = exacto;
+    return;
+  }
+
+  // Buscar por nombre o código parcial
+  const ql = q.toLowerCase();
+  const matches = productos.filter(p =>
+    p.nombre.toLowerCase().includes(ql) || String(p.codigo).includes(q)
+  ).slice(0, 8);
+
+  if (matches.length === 0) {
+    cerrarSugerencias();
+    notFound.classList.add('show');
+    return;
+  }
+
+  mostrarSugerencias(matches, q);
+}
+
+function mostrarSugerencias(lista, q) {
+  const sug = document.getElementById('sugerencias');
+  sug.innerHTML = lista.map((p, i) => {
+    const nombreHl = resaltar(p.nombre, q);
+    const codigoHl = resaltar(String(p.codigo), q);
+    return `<div class="sug-item" onclick="seleccionarSugerencia('${p.codigo}')">
+      <span class="sug-nombre">${nombreHl}</span>
+      <span class="sug-codigo">${codigoHl}</span>
+      <span class="sug-precio">${formatGs(p.precio)}</span>
+    </div>`;
+  }).join('');
+  sug.classList.add('show');
+}
+
+function resaltar(texto, q) {
+  const idx = texto.toLowerCase().indexOf(q.toLowerCase());
+  if (idx < 0) return texto;
+  return texto.slice(0, idx) +
+    '<span class="sug-highlight">' + texto.slice(idx, idx + q.length) + '</span>' +
+    texto.slice(idx + q.length);
+}
+
+function seleccionarSugerencia(codigo) {
+  const prod = productos.find(p => String(p.codigo) === String(codigo));
+  if (!prod) return;
+  prodSeleccionado = prod;
+  document.getElementById('input-codigo').value = prod.codigo;
+  cerrarSugerencias();
+  mostrarPreview(prod);
+  document.getElementById('input-qty').focus();
+  document.getElementById('input-qty').select();
+}
+
+function mostrarPreview(prod) {
+  document.getElementById('prev-code').textContent = prod.codigo;
+  document.getElementById('prev-name').textContent = prod.nombre;
+  document.getElementById('prev-price').textContent = formatGs(prod.precio);
+  document.getElementById('product-preview').classList.add('show');
+  document.getElementById('not-found').classList.remove('show');
+}
+
+function cerrarSugerencias() {
+  const sug = document.getElementById('sugerencias');
+  sug.classList.remove('show');
+  sugIndex = -1;
+}
+
+function actualizarSugSelected(items) {
+  items.forEach((el, i) => el.classList.toggle('selected', i === sugIndex));
+  if (items[sugIndex]) items[sugIndex].scrollIntoView({ block: 'nearest' });
+}
 
 // ─── NAVEGACIÓN ───────────────────────────────────────
 function goTo(page) {
@@ -1012,44 +1192,73 @@ async function checkConnection() {
     const r = await apiCall('getProductos');
     if (r.ok) {
       setStatus('conectado', 'ok');
+      sincronizarPendientes();
     } else {
       setStatus('error', 'err');
     }
   } catch {
-    setStatus('sin conexión', 'err');
+    setStatus('sin internet', 'err');
   }
 }
 
-// ─── API (JSONP — resuelve CORS con Google Apps Script) ───
+// ─── API (JSONP) ──────────────────────────────────────
 function apiCall(action, data = null) {
   return new Promise((resolve, reject) => {
     if (!CONFIG.url) { reject(new Error('Sin URL configurada')); return; }
-
     const cbName = '_cb_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
     let url = CONFIG.url + '?callback=' + cbName + '&action=' + action;
     if (data) url += '&data=' + encodeURIComponent(JSON.stringify(data));
-
     const script = document.createElement('script');
-    const timer = setTimeout(() => {
-      cleanup();
-      reject(new Error('Timeout'));
-    }, 10000);
-
-    window[cbName] = (result) => {
-      cleanup();
-      resolve(result);
-    };
-
+    const timer = setTimeout(() => { cleanup(); reject(new Error('Timeout')); }, 10000);
+    window[cbName] = (result) => { cleanup(); resolve(result); };
     function cleanup() {
       clearTimeout(timer);
       delete window[cbName];
       if (script.parentNode) script.parentNode.removeChild(script);
     }
-
     script.onerror = () => { cleanup(); reject(new Error('Error de red')); };
     script.src = url;
     document.head.appendChild(script);
   });
+}
+
+// ─── COLA OFFLINE ────────────────────────────────────
+function guardarPendiente(venta) {
+  venta._pendiente_id = Date.now();
+  ventasPendientes.push(venta);
+  localStorage.setItem('facturacion_pendientes', JSON.stringify(ventasPendientes));
+  actualizarBadgeOffline();
+}
+
+function actualizarBadgeOffline() {
+  const badge = document.getElementById('offline-badge');
+  const count = document.getElementById('offline-count');
+  if (ventasPendientes.length > 0) {
+    badge.classList.add('show');
+    count.textContent = ventasPendientes.length + (ventasPendientes.length === 1 ? ' pendiente' : ' pendientes');
+  } else {
+    badge.classList.remove('show');
+  }
+}
+
+async function sincronizarPendientes() {
+  if (ventasPendientes.length === 0 || !CONFIG.url) return;
+  const total = ventasPendientes.length;
+  let ok = 0;
+  const restantes = [];
+  for (const venta of ventasPendientes) {
+    try {
+      const r = await apiCall('saveVenta', venta);
+      if (r.ok) ok++;
+      else restantes.push(venta);
+    } catch {
+      restantes.push(venta);
+    }
+  }
+  ventasPendientes = restantes;
+  localStorage.setItem('facturacion_pendientes', JSON.stringify(ventasPendientes));
+  actualizarBadgeOffline();
+  if (ok > 0) toast(ok + ' venta' + (ok > 1 ? 's' : '') + ' sincronizada' + (ok > 1 ? 's' : '') + ' ✓', 'success');
 }
 
 // ─── PRODUCTOS ────────────────────────────────────────
@@ -1067,24 +1276,6 @@ async function cargarProductos() {
 
 function buscarProducto(codigo) {
   return productos.find(p => String(p.codigo) === String(codigo.trim()));
-}
-
-function buscarProductoPrev() {
-  const codigo = document.getElementById('input-codigo').value.trim();
-  const preview = document.getElementById('product-preview');
-  const notFound = document.getElementById('not-found');
-  preview.classList.remove('show');
-  notFound.classList.remove('show');
-  if (!codigo) return;
-  const prod = buscarProducto(codigo);
-  if (prod) {
-    document.getElementById('prev-code').textContent = prod.codigo;
-    document.getElementById('prev-name').textContent = prod.nombre;
-    document.getElementById('prev-price').textContent = formatGs(prod.precio);
-    preview.classList.add('show');
-  } else {
-    notFound.classList.add('show');
-  }
 }
 
 function renderProductos() {
@@ -1124,7 +1315,6 @@ function abrirModalProducto(codigoInicial = '') {
   document.getElementById('prod-precio').value = '';
   document.getElementById('prod-codigo').readOnly = false;
 
-  // Si es edición
   if (codigoInicial && typeof codigoInicial === 'string' && codigoInicial.length > 0) {
     const prod = buscarProducto(codigoInicial);
     if (prod) {
@@ -1158,8 +1348,6 @@ async function guardarProducto() {
   }
 
   const prod = { codigo, nombre, precio };
-
-  // Actualizar cache local
   const idx = productos.findIndex(p => String(p.codigo) === String(codigo));
   if (idx >= 0) productos[idx] = prod;
   else productos.push(prod);
@@ -1169,11 +1357,8 @@ async function guardarProducto() {
   renderProductos();
   toast(editingCodigo ? 'Producto actualizado' : 'Producto guardado', 'success');
 
-  // Sync con Sheets
   if (CONFIG.url) {
-    try {
-      await apiCall('saveProducto', prod);
-    } catch { toast('Guardado localmente (sin conexión)', 'error'); }
+    try { await apiCall('saveProducto', prod); } catch { toast('Guardado localmente (sin conexión)', 'error'); }
   }
 }
 
@@ -1183,7 +1368,6 @@ async function eliminarProducto(codigo) {
   localStorage.setItem('facturacion_productos', JSON.stringify(productos));
   renderProductos();
   toast('Producto eliminado', 'success');
-
   if (CONFIG.url) {
     try { await apiCall('deleteProducto&codigo=' + encodeURIComponent(codigo)); } catch {}
   }
@@ -1191,20 +1375,22 @@ async function eliminarProducto(codigo) {
 
 // ─── VENTAS ───────────────────────────────────────────
 function agregarItem() {
-  const codigo = document.getElementById('input-codigo').value.trim();
+  cerrarSugerencias();
+  const codigoInput = document.getElementById('input-codigo').value.trim();
   const qty = parseInt(document.getElementById('input-qty').value) || 1;
 
-  if (!codigo) { document.getElementById('input-codigo').focus(); return; }
+  if (!codigoInput) { document.getElementById('input-codigo').focus(); return; }
 
-  const prod = buscarProducto(codigo);
+  // Usar producto seleccionado desde sugerencia, o buscar por código exacto
+  const prod = prodSeleccionado || buscarProducto(codigoInput);
+
   if (!prod) {
     document.getElementById('not-found').classList.add('show');
     document.getElementById('product-preview').classList.remove('show');
     return;
   }
 
-  // Si ya existe en la lista, sumar cantidad
-  const existente = itemsVenta.find(i => String(i.codigo) === String(codigo));
+  const existente = itemsVenta.find(i => String(i.codigo) === String(prod.codigo));
   if (existente) {
     existente.cantidad += qty;
   } else {
@@ -1216,6 +1402,7 @@ function agregarItem() {
   document.getElementById('input-qty').value = '1';
   document.getElementById('product-preview').classList.remove('show');
   document.getElementById('not-found').classList.remove('show');
+  prodSeleccionado = null;
   document.getElementById('input-codigo').focus();
 }
 
@@ -1260,26 +1447,25 @@ async function confirmarVenta() {
   if (itemsVenta.length === 0) { toast('Agregá al menos un item', 'error'); return; }
 
   const total = itemsVenta.reduce((s, i) => s + i.precio * i.cantidad, 0);
-  const venta = { items: itemsVenta, total };
+  const venta = { items: [...itemsVenta], total };
 
-  toast('Guardando venta…', '');
+  if (!CONFIG.url) {
+    toast('Configurá el Google Sheets primero', 'error'); return;
+  }
 
-  if (CONFIG.url) {
-    try {
-      const r = await apiCall('saveVenta', venta);
-      if (r.ok) {
-        toast('Venta registrada ✓', 'success');
-      } else {
-        toast('Error al guardar', 'error');
-        return;
-      }
-    } catch {
-      toast('Sin conexión — venta no guardada', 'error');
-      return;
+  // Intentar guardar online
+  try {
+    toast('Guardando venta…', '');
+    const r = await apiCall('saveVenta', venta);
+    if (r.ok) {
+      toast('Venta registrada ✓', 'success');
+    } else {
+      throw new Error('Error del servidor');
     }
-  } else {
-    toast('Configurá el Google Sheets primero', 'error');
-    return;
+  } catch {
+    // Sin internet → guardar en cola
+    guardarPendiente(venta);
+    toast('Sin internet — venta guardada localmente ⚡', 'error');
   }
 
   itemsVenta = [];
@@ -1327,10 +1513,7 @@ function guardarConfig() {
   const st = document.getElementById('config-status');
   st.style.display = 'block';
   st.textContent = '✓ URL guardada. Probando conexión…';
-  checkConnection().then(() => {
-    cargarProductos();
-    goTo('ventas');
-  });
+  checkConnection().then(() => { cargarProductos(); goTo('ventas'); });
 }
 
 function copiarAppsScript() {
@@ -1348,12 +1531,8 @@ function copiarAppsScript() {
 }
 
 // ─── UTILS ────────────────────────────────────────────
-function formatGs(n) {
-  return '₲ ' + formatNum(n);
-}
-function formatNum(n) {
-  return Math.round(Number(n)).toLocaleString('es-PY');
-}
+function formatGs(n) { return '₲ ' + formatNum(n); }
+function formatNum(n) { return Math.round(Number(n)).toLocaleString('es-PY'); }
 
 function toast(msg, type = '') {
   const container = document.getElementById('toast-container');
@@ -1361,7 +1540,7 @@ function toast(msg, type = '') {
   el.className = 'toast ' + type;
   el.textContent = msg;
   container.appendChild(el);
-  setTimeout(() => el.remove(), 3000);
+  setTimeout(() => el.remove(), 3500);
 }
 
 function debounce(fn, ms) {
@@ -1369,7 +1548,6 @@ function debounce(fn, ms) {
   return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
 }
 
-// Cerrar modal con Escape
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') cerrarModal();
 });
