@@ -722,9 +722,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 10px 16px;
-    border-top: 1px solid var(--border);
     background: var(--surface);
-    border-radius: 0 0 8px 8px;
   }
   .pagination-info {
     font-family: var(--mono);
@@ -949,10 +947,10 @@
           <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Cargando productos…</td></tr>
         </tbody>
       </table>
-      <div class="pagination" id="productos-pagination" style="display:none">
-        <div class="pagination-info" id="productos-pag-info"></div>
-        <div class="pagination-btns" id="productos-pag-btns"></div>
-      </div>
+    </div>
+    <div class="pagination" id="productos-pagination" style="display:none;border:1px solid var(--border);border-radius:8px;margin-top:0;border-top:none;border-radius:0 0 8px 8px;margin-top:-1px">
+      <div class="pagination-info" id="productos-pag-info"></div>
+      <div class="pagination-btns" id="productos-pag-btns"></div>
     </div>
   </div>
 
@@ -1009,10 +1007,10 @@
           <tr class="loading-row"><td colspan="5">Cargando historial…</td></tr>
         </tbody>
       </table>
-      <div class="pagination" id="historial-pagination" style="display:none">
-        <div class="pagination-info" id="historial-pag-info"></div>
-        <div class="pagination-btns" id="historial-pag-btns"></div>
-      </div>
+    </div>
+    <div class="pagination" id="historial-pagination" style="display:none;border:1px solid var(--border);border-top:none;border-radius:0 0 8px 8px;margin-top:-1px">
+      <div class="pagination-info" id="historial-pag-info"></div>
+      <div class="pagination-btns" id="historial-pag-btns"></div>
     </div>
   </div>
 
