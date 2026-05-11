@@ -1642,11 +1642,19 @@ async function cargarHistorial() {
 
       const ventasMes = r.data.filter(v => {
         if (!v.fecha) return false;
-        // fecha formato dd/MM/yyyy HH:mm:ss
-        const parts = v.fecha.split('/');
-        if (parts.length < 3) return false;
-        const mes = parseInt(parts[1]) - 1;
-        const anio = parseInt(parts[2]);
+        let mes, anio;
+        if (String(v.fecha).includes('T')) {
+          // Formato ISO: 2026-05-11T01:04:28.000Z
+          const d = new Date(v.fecha);
+          mes = d.getMonth();
+          anio = d.getFullYear();
+        } else {
+          // Formato dd/MM/yyyy HH:mm:ss
+          const parts = String(v.fecha).split('/');
+          if (parts.length < 3) return false;
+          mes = parseInt(parts[1]) - 1;
+          anio = parseInt(parts[2]);
+        }
         return mes === mesActual && anio === anioActual;
       });
 
@@ -1661,16 +1669,22 @@ async function cargarHistorial() {
       document.getElementById('res-mes').textContent = MESES[mesActual] + ' ' + anioActual;
 
       if (r.data.length > 0) {
-        tbody.innerHTML = r.data.map((v, i) => `
+        tbody.innerHTML = r.data.map((v, i) => {
+          let fechaDisplay = v.fecha;
+          if (String(v.fecha).includes('T')) {
+            const d = new Date(v.fecha);
+            fechaDisplay = d.toLocaleDateString('es-PY') + ' ' + d.toLocaleTimeString('es-PY', {hour:'2-digit', minute:'2-digit'});
+          }
+          return `
           <tr>
             <td>#${r.data.length - i}</td>
-            <td>${v.fecha}</td>
+            <td>${fechaDisplay}</td>
             <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.items}</td>
             <td class="td-right td-total">₲ ${formatNum(v.total)}</td>
             <td class="td-right" style="color:#4ade80;font-family:var(--mono);font-size:12px">${Number(v.ganancia) > 0 ? '₲ ' + formatNum(v.ganancia) : '<span style="color:var(--text3)">—</span>'}</td>
             <td><span class="badge">OK</span></td>
-          </tr>
-        `).join('');
+          </tr>`;
+        }).join('');
       } else {
         tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Sin ventas registradas</td></tr>`;
       }
