@@ -1383,7 +1383,7 @@ async function cargarProductos() {
 }
 
 function buscarProducto(codigo) {
-  return productos.find(p => String(p.codigo) === String(codigo.trim()));
+  return productos.find(p => String(p.codigo) === String(codigo));
 }
 
 function renderProductos() {
