@@ -716,7 +716,66 @@
   .margen-neg { color: var(--danger); }
   .margen-na  { color: var(--text3); }
 
-  /* ─── SUGERENCIAS DROPDOWN ─── */
+  /* ─── PAGINACIÓN ─── */
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: 0 0 8px 8px;
+  }
+  .pagination-info {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+  .pagination-btns { display: flex; gap: 4px; align-items: center; }
+  .page-btn {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .page-btn:hover:not(:disabled) { color: var(--text); border-color: var(--border2); }
+  .page-btn.active { background: var(--accent-dim); color: var(--accent); border-color: rgba(0,229,160,0.3); }
+  .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  /* ─── SELECTOR MES ─── */
+  .mes-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mes-selector button {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    color: var(--text2);
+    font-family: var(--mono);
+    font-size: 13px;
+    width: 28px; height: 28px;
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+  }
+  .mes-selector button:hover { color: var(--accent); border-color: rgba(0,229,160,0.3); }
+  .mes-selector .mes-label {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    min-width: 130px;
+    text-align: center;
+    letter-spacing: 0.05em;
+  }
   .sugerencias {
     display: none;
     position: absolute;
@@ -890,6 +949,10 @@
           <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Cargando productos…</td></tr>
         </tbody>
       </table>
+      <div class="pagination" id="productos-pagination" style="display:none">
+        <div class="pagination-info" id="productos-pag-info"></div>
+        <div class="pagination-btns" id="productos-pag-btns"></div>
+      </div>
     </div>
   </div>
 
@@ -897,7 +960,14 @@
   <div class="page" id="page-historial">
     <div class="productos-header">
       <div class="section-title">Historial de ventas</div>
-      <button class="btn btn-ghost btn-sm" onclick="cargarHistorial()">↻ ACTUALIZAR</button>
+      <div style="display:flex;gap:10px;align-items:center">
+        <div class="mes-selector">
+          <button onclick="cambiarMes(-1)">‹</button>
+          <div class="mes-label" id="mes-label">—</div>
+          <button onclick="cambiarMes(1)">›</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="cargarHistorial()">↻ ACTUALIZAR</button>
+      </div>
     </div>
 
     <!-- Resumen del mes -->
@@ -939,6 +1009,10 @@
           <tr class="loading-row"><td colspan="5">Cargando historial…</td></tr>
         </tbody>
       </table>
+      <div class="pagination" id="historial-pagination" style="display:none">
+        <div class="pagination-info" id="historial-pag-info"></div>
+        <div class="pagination-btns" id="historial-pag-btns"></div>
+      </div>
     </div>
   </div>
 
@@ -1282,7 +1356,10 @@ function goTo(page) {
   });
   currentPage = page;
   if (page === 'productos') renderProductos();
-  if (page === 'historial') cargarHistorial();
+  if (page === 'historial') {
+    document.getElementById('mes-label').textContent = MESES[mesFiltro] + ' ' + anioFiltro;
+    cargarHistorial();
+  }
   if (page === 'ventas') setTimeout(() => document.getElementById('input-codigo').focus(), 50);
 }
 
@@ -1386,6 +1463,14 @@ function buscarProducto(codigo) {
   return productos.find(p => String(p.codigo) === String(codigo));
 }
 
+const POR_PAGINA = 50;
+let pagProductos = 1;
+let pagHistorial = 1;
+let todasVentas = [];
+let mesFiltro = new Date().getMonth();
+let anioFiltro = new Date().getFullYear();
+const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
 function renderProductos() {
   const tbody = document.getElementById('products-tbody');
   const filtro = document.getElementById('search-productos')?.value.toLowerCase() || '';
@@ -1397,10 +1482,16 @@ function renderProductos() {
     tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">
       ${filtro ? 'Sin resultados para "' + filtro + '"' : 'Sin productos registrados aún'}
     </td></tr>`;
+    document.getElementById('productos-pagination').style.display = 'none';
     return;
   }
 
-  tbody.innerHTML = lista.map((p, i) => {
+  const totalPags = Math.ceil(lista.length / POR_PAGINA);
+  if (pagProductos > totalPags) pagProductos = totalPags;
+  const inicio = (pagProductos - 1) * POR_PAGINA;
+  const pagina = lista.slice(inicio, inicio + POR_PAGINA);
+
+  tbody.innerHTML = pagina.map((p, i) => {
     let margenHtml = '<span class="margen-na">—</span>';
     if (p.costo > 0 && p.precio > 0) {
       const gan = p.precio - p.costo;
@@ -1410,7 +1501,7 @@ function renderProductos() {
     }
     return `
     <tr>
-      <td class="td-num">${i + 1}</td>
+      <td class="td-num">${inicio + i + 1}</td>
       <td class="td-codigo">${p.codigo}</td>
       <td class="td-nombre">${p.nombre}</td>
       <td class="td-margen" style="text-align:right;color:var(--text2)">${p.costo > 0 ? formatGs(p.costo) : '<span style="color:var(--text3)">—</span>'}</td>
@@ -1422,9 +1513,11 @@ function renderProductos() {
       </td>
     </tr>`;
   }).join('');
+
+  renderPaginacion('productos', pagProductos, totalPags, lista.length, inicio, pagina.length);
 }
 
-function filtrarProductos() { renderProductos(); }
+function filtrarProductos() { pagProductos = 1; renderProductos(); }
 
 function abrirModalProducto(codigoInicial = '') {
   editingCodigo = null;
@@ -1622,9 +1715,28 @@ async function confirmarVenta() {
 }
 
 // ─── HISTORIAL ────────────────────────────────────────
+function parseFecha(fechaStr) {
+  if (!fechaStr) return null;
+  if (String(fechaStr).includes('T')) return new Date(fechaStr);
+  const parts = String(fechaStr).split('/');
+  if (parts.length < 3) return null;
+  const [dia, mes, anioHora] = parts;
+  const [anio] = anioHora.split(' ');
+  return new Date(parseInt(anio), parseInt(mes) - 1, parseInt(dia));
+}
+
+function cambiarMes(delta) {
+  mesFiltro += delta;
+  if (mesFiltro > 11) { mesFiltro = 0; anioFiltro++; }
+  if (mesFiltro < 0)  { mesFiltro = 11; anioFiltro--; }
+  pagHistorial = 1;
+  renderHistorial();
+}
+
 async function cargarHistorial() {
   const tbody = document.getElementById('historial-tbody');
   tbody.innerHTML = `<tr class="loading-row"><td colspan="6">Cargando…</td></tr>`;
+  document.getElementById('historial-pagination').style.display = 'none';
 
   if (!CONFIG.url) {
     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Configurá el Google Sheets primero</td></tr>`;
@@ -1634,64 +1746,107 @@ async function cargarHistorial() {
   try {
     const r = await apiCall('getVentas');
     if (r.ok) {
-      // Filtrar ventas del mes actual
-      const ahora = new Date();
-      const mesActual = ahora.getMonth();
-      const anioActual = ahora.getFullYear();
-      const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
-
-      const ventasMes = r.data.filter(v => {
-        if (!v.fecha) return false;
-        let mes, anio;
-        if (String(v.fecha).includes('T')) {
-          // Formato ISO: 2026-05-11T01:04:28.000Z
-          const d = new Date(v.fecha);
-          mes = d.getMonth();
-          anio = d.getFullYear();
-        } else {
-          // Formato dd/MM/yyyy HH:mm:ss
-          const parts = String(v.fecha).split('/');
-          if (parts.length < 3) return false;
-          mes = parseInt(parts[1]) - 1;
-          anio = parseInt(parts[2]);
-        }
-        return mes === mesActual && anio === anioActual;
-      });
-
-      const totalMes = ventasMes.reduce((s, v) => s + Number(v.total || 0), 0);
-      const gananciaMes = ventasMes.reduce((s, v) => s + Number(v.ganancia || 0), 0);
-      const margenPct = totalMes > 0 ? ((gananciaMes / totalMes) * 100).toFixed(1) + '%' : '—';
-
-      document.getElementById('res-cantidad').textContent = ventasMes.length;
-      document.getElementById('res-total').textContent = formatGs(totalMes);
-      document.getElementById('res-ganancia').textContent = formatGs(gananciaMes);
-      document.getElementById('res-margen').textContent = margenPct;
-      document.getElementById('res-mes').textContent = MESES[mesActual] + ' ' + anioActual;
-
-      if (r.data.length > 0) {
-        tbody.innerHTML = r.data.map((v, i) => {
-          let fechaDisplay = v.fecha;
-          if (String(v.fecha).includes('T')) {
-            const d = new Date(v.fecha);
-            fechaDisplay = d.toLocaleDateString('es-PY') + ' ' + d.toLocaleTimeString('es-PY', {hour:'2-digit', minute:'2-digit'});
-          }
-          return `
-          <tr>
-            <td>#${r.data.length - i}</td>
-            <td>${fechaDisplay}</td>
-            <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.items}</td>
-            <td class="td-right td-total">₲ ${formatNum(v.total)}</td>
-            <td class="td-right" style="color:#4ade80;font-family:var(--mono);font-size:12px">${Number(v.ganancia) > 0 ? '₲ ' + formatNum(v.ganancia) : '<span style="color:var(--text3)">—</span>'}</td>
-            <td><span class="badge">OK</span></td>
-          </tr>`;
-        }).join('');
-      } else {
-        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Sin ventas registradas</td></tr>`;
-      }
+      todasVentas = r.data;
+      pagHistorial = 1;
+      renderHistorial();
     }
   } catch {
     tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--danger);font-family:var(--mono);font-size:12px">Error al conectar</td></tr>`;
   }
+}
+
+function renderHistorial() {
+  // Actualizar label del mes
+  document.getElementById('mes-label').textContent = MESES[mesFiltro] + ' ' + anioFiltro;
+
+  // Filtrar por mes seleccionado
+  const ventasMes = todasVentas.filter(v => {
+    const d = parseFecha(v.fecha);
+    return d && d.getMonth() === mesFiltro && d.getFullYear() === anioFiltro;
+  });
+
+  // Resumen del mes
+  const totalMes = ventasMes.reduce((s, v) => s + Number(v.total || 0), 0);
+  const gananciaMes = ventasMes.reduce((s, v) => s + Number(v.ganancia || 0), 0);
+  const margenPct = totalMes > 0 ? ((gananciaMes / totalMes) * 100).toFixed(1) + '%' : '—';
+  document.getElementById('res-cantidad').textContent = ventasMes.length;
+  document.getElementById('res-total').textContent = formatGs(totalMes);
+  document.getElementById('res-ganancia').textContent = formatGs(gananciaMes);
+  document.getElementById('res-margen').textContent = margenPct;
+  document.getElementById('res-mes').textContent = MESES[mesFiltro] + ' ' + anioFiltro;
+
+  const tbody = document.getElementById('historial-tbody');
+
+  if (ventasMes.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--text3);font-family:var(--mono);font-size:12px">Sin ventas en ${MESES[mesFiltro]} ${anioFiltro}</td></tr>`;
+    document.getElementById('historial-pagination').style.display = 'none';
+    return;
+  }
+
+  const totalPags = Math.ceil(ventasMes.length / POR_PAGINA);
+  if (pagHistorial > totalPags) pagHistorial = totalPags;
+  const inicio = (pagHistorial - 1) * POR_PAGINA;
+  const pagina = ventasMes.slice(inicio, inicio + POR_PAGINA);
+  const numBase = ventasMes.length; // para numerar de mayor a menor
+
+  tbody.innerHTML = pagina.map((v, i) => {
+    const d = parseFecha(v.fecha);
+    const fechaDisplay = d
+      ? d.toLocaleDateString('es-PY') + ' ' + d.toLocaleTimeString('es-PY', {hour:'2-digit', minute:'2-digit'})
+      : v.fecha;
+    return `
+    <tr>
+      <td>#${numBase - inicio - i}</td>
+      <td>${fechaDisplay}</td>
+      <td style="max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${v.items}</td>
+      <td class="td-right td-total">₲ ${formatNum(v.total)}</td>
+      <td class="td-right" style="color:#4ade80;font-family:var(--mono);font-size:12px">${Number(v.ganancia) > 0 ? '₲ ' + formatNum(v.ganancia) : '<span style="color:var(--text3)">—</span>'}</td>
+      <td><span class="badge">OK</span></td>
+    </tr>`;
+  }).join('');
+
+  renderPaginacion('historial', pagHistorial, totalPags, ventasMes.length, inicio, pagina.length);
+}
+
+// ─── PAGINACIÓN ───────────────────────────────────────
+function renderPaginacion(tipo, paginaActual, totalPags, totalItems, inicio, cantPagina) {
+  const pag = document.getElementById(tipo + '-pagination');
+  const info = document.getElementById(tipo + '-pag-info');
+  const btns = document.getElementById(tipo + '-pag-btns');
+
+  if (totalPags <= 1) { pag.style.display = 'none'; return; }
+  pag.style.display = 'flex';
+
+  info.textContent = `${inicio + 1}–${inicio + cantPagina} de ${totalItems}`;
+
+  // Generar botones: anterior, páginas, siguiente
+  let html = `<button class="page-btn" onclick="irPagina('${tipo}',${paginaActual - 1})" ${paginaActual === 1 ? 'disabled' : ''}>‹</button>`;
+
+  const rango = [];
+  for (let p = 1; p <= totalPags; p++) {
+    if (p === 1 || p === totalPags || (p >= paginaActual - 1 && p <= paginaActual + 1)) {
+      rango.push(p);
+    } else if (rango[rango.length - 1] !== '…') {
+      rango.push('…');
+    }
+  }
+  rango.forEach(p => {
+    if (p === '…') {
+      html += `<span style="font-family:var(--mono);font-size:11px;color:var(--text3);padding:0 4px">…</span>`;
+    } else {
+      html += `<button class="page-btn ${p === paginaActual ? 'active' : ''}" onclick="irPagina('${tipo}',${p})">${p}</button>`;
+    }
+  });
+
+  html += `<button class="page-btn" onclick="irPagina('${tipo}',${paginaActual + 1})" ${paginaActual === totalPags ? 'disabled' : ''}>›</button>`;
+  btns.innerHTML = html;
+}
+
+function irPagina(tipo, pag) {
+  if (tipo === 'productos') { pagProductos = pag; renderProductos(); }
+  if (tipo === 'historial') { pagHistorial = pag; renderHistorial(); }
+  // Scroll suave al inicio de la tabla
+  document.getElementById('page-' + (tipo === 'historial' ? 'historial' : 'productos')).scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ─── CONFIG ───────────────────────────────────────────
